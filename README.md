@@ -1,6 +1,19 @@
 # PolG_bcf_to_excel
 This is a python script that takes bcf query files with the fields:
 
+
+java -jar trimmomatic-0.39.jar PE -phred33 inputforward.fq inputreverse.fastq output_forward_paired.fq output_forward_unpaired.fq output_reverse_paired.fq output_reverse_unpaired.fq ILLUMINACLIP:TruSeq3-SE.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36
+bwa mem mm10_mtDNA.fasta output_forward_paired.fq output_reverse_paired.fq >output.sam
+samtools view -S -b output.sam | samtools sort -o output.sorted.bam
+java -jar ./gatk-4.1.7.0/picard.jar AddOrReplaceReadGroups I= output.sorted.bam O= RG.bam RGID=00 RGLB=NON RGPL=NONE RGPU=unit1 RGSM=0")
+samtools index RG.bam
+gatk Mutect2 -R mm10_mtDNA.fasta --mitochondria-mode -I RG.bam -O ouput.vcf
+gatk FilterMutectCalls --mitochondria-mode -R mm10_mtDNA.fasta -V output.vcf -O outputfiltered.vcf
+gatk SelectVariants --exclude-filtered -V outputfiltered.vcf -O onlypass.vcf
+bcftools query -f '%POS\t%REF\t[%AF]\t[%AD]\t%ALT\n' onlypass.vcf  >onlypassquery.vcf
+
+
+
  bcftools query -f '%POS\t%REF\t[%AF]\t[%AD]\t%ALT\n
  
  and outputs 2 excel files, one for point mutations and one for indels.
