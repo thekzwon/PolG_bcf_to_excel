@@ -7,15 +7,16 @@ Created on Wed Sep  9 11:20:59 2020
 """
 
 # Final python script to convert bcfquery files into excel
+# Needs the genbank reference
 
-# Updated 9_15_20
+# Updated 10_15_20
 
 import csv
 from os import listdir
 from collections import Counter
 from Bio import SeqIO
 
-path = "/Users/kendra/Desktop/Research/Havird_Lab/PolG/total_python_input/"
+path = "path/to/folder/with/bcf/files/and/reference"
 
 ####################################################################
 ####Codon_table#######
@@ -80,15 +81,12 @@ fake_indel_list=[]
 final_mut_list = []
 
 
-
-
 #List for renaming animals to lowercase letters
 new_animal_names = [chr(i) for i in range(97,123)]
 
 
 # Gets and prints list of files in directory
 bcf_files = [file for file in listdir(path)]
-print(bcf_files)
 
 animal_num = 0
 sample_num = 0
@@ -137,13 +135,15 @@ for file in sorted(bcf_files):
                 mutation_line.append(count[0])
                 mutation_line.append(count[index])
                 mutation_line.append(alt_allele[index - 1])
-
-
                 lines_to_add = lines_to_add - 1
                 # separating snps and indels
+                #If the mutation is one base to one base, it is a point mut
                 if len(mutation_line[5]) == 1 and len(mutation_line[9]) == 1:
                     point_mutation_list.append(mutation_line)
+                #if the mutation has more than one base in either the ref or the mut, it might be an indel.
                 else:
+                    #Note if the reference is two bases (ex. AT) and the mut is also 2 bases ex(TT),
+                    #then the mutation is really a point
                     if len(mutation_line[5]) == len(mutation_line[9]):
                         mut_num = 0
                         for base in mutation_line[5]:
@@ -154,6 +154,7 @@ for file in sorted(bcf_files):
                                 mut_line[9] = mut_line[9][mut_num]
                                 fake_indel_list.append(mut_line)
                             mut_num += 1
+                    #else add to the indel list
                     else:
                         indel_mutation_list.append(mutation_line)
 
@@ -188,14 +189,14 @@ for mutation in fake_indel_list:
         
 
 
-
+#somatic germline distinction
 som_germ_det = []
 for mutation in point_mutation_list:
     som_germ = mutation[0] + mutation[4] + mutation[5] + mutation[9]
     som_germ_det.append(som_germ)
 somgermcounter = (Counter(som_germ_det))
 
-
+#1 is somatic and 2 is germline from counter
 for mutation in point_mutation_list:
     som_germ = mutation[0] + mutation[4] + mutation[5] + mutation[9]
     mutation.append(str(somgermcounter[som_germ]).replace(
@@ -203,15 +204,14 @@ for mutation in point_mutation_list:
 
 point_mutation_list[:] = (value for value in point_mutation_list if value != "")
 
-
+#som ger distinction for indels
 som_germ_indel = []
 for mutation in indel_mutation_list:
     som_germ = mutation[0] + mutation[4] + mutation[5] + mutation[9]
     som_germ_indel.append(som_germ)
-
 somgermcounter = (Counter(som_germ_indel))
 
-
+#1 for somatic and 2 for germline, also adds if it is a deletion or insertion
 for mutation in indel_mutation_list:
     som_germ = mutation[0] + mutation[4] + mutation[5] + mutation[9]
     mutation.append(str(somgermcounter[som_germ]).replace(
@@ -223,7 +223,7 @@ for mutation in indel_mutation_list:
     else:
         mutation.append("insertion")
 
-
+#adds frameshift or no frameshift
 for mutation in indel_mutation_list:
     if len(mutation[5]) - len(mutation[9]) % 3 == 0:
         mutation.append("no frameshift")
@@ -231,12 +231,11 @@ for mutation in indel_mutation_list:
         mutation.append("frameshift")
         
 
+#opens sequence record
 seq_record = list(SeqIO.parse(open(path + "sequence.gb"), "gb"))
 
-# open genbank file and parse
 gene_records = []
-
-
+#parses record file and creates list of appropriate gene info
 for record in seq_record:
     for feature in record.features:
         single_gene = []
@@ -245,6 +244,7 @@ for record in seq_record:
             single_gene.append(feature.type)
             single_gene.append(feature.location._start.position)
             single_gene.append(feature.location._end.position)
+            single_gene.append(str(feature.qualifiers["translation"]))
             single_gene.append(feature.location.strand)
             single_gene.append(str(feature.location.extract(record.seq)))
             gene_records.append(single_gene)
@@ -257,10 +257,10 @@ for record in seq_record:
             single_gene.append(str(feature.location.extract(record.seq)))
             gene_records.append(single_gene)
 
-
 for record in seq_record:
     mtDNA_seq = record.seq
 
+#Gets length of sum sequences for each category
 rRNA_len = 0
 tRNA_len = 0
 dloop_len = 0
@@ -276,7 +276,6 @@ for gene in gene_records:
     if gene[1] == "CDS":
         CDS_len += gene[3] - gene[2]
 
-
 region_length_dictionary = {
     "rRNA": rRNA_len,
     "tRNA": tRNA_len,
@@ -284,8 +283,8 @@ region_length_dictionary = {
     "CDS": CDS_len}
 
 
-    
-    
+
+###Adds the bulk of the amino acid info, point muts
 for gene in gene_records:
     #trNA, rRNA, D-loop
     if gene[1] != "CDS":
@@ -295,7 +294,9 @@ for gene in gene_records:
             final_mutation += mutation
             mutation_loc = mutation[4]
             if int(mutation_loc) > gene[2] and int(mutation_loc) <+ gene[3]:
+                #Where the mutation is in the gene
                 ref = int(mutation_loc) - gene[2]
+                #This returns the amino acid position 1 is position 0 in a list, 2 is 1,3 is 2
                 gene_seq = gene[-1]
                 surrounding = mtDNA_seq[int(
                     mutation[4]) - 2] + mtDNA_seq[int(mutation_loc)]
@@ -310,6 +311,7 @@ for gene in gene_records:
                     str(1 / region_length_dictionary[gene[1]]))
                 final_mutation.append(
                     str(1 / region_length_dictionary[gene[1]]))
+                final_mutation.append("NA")
                 final_mutation.append("NA")
                 final_mutation.append("NA")
                 final_mutation.append("NA")
@@ -331,13 +333,14 @@ for gene in gene_records:
                 # adding polyA tail: needed for some stop codons
                 gene_seq = gene[-1] + "AA"
                 surrounding = str(gene_seq[ref - 2]) + str(gene_seq[ref])
-                b = (ref // 3)
+                b = ((ref-1) // 3)
                 # Gets the correct codon by using the reference sequence and
                 # translates
                 right_codon = (gene_seq[(b * 3):(b * 3) + 3])
                 codon_list = [right_codon[0], right_codon[1], right_codon[2]]
                 # Gets the new(mutated) codon
-                codon_list[ref % 3] = mutation[5]
+                get_pos = ((ref % 3)+2)%3   
+                codon_list[get_pos] = mutation[9]
                 new_codon = ''
                 new_codon = new_codon.join(codon_list)
                 original_aa = translate(right_codon.upper())
@@ -350,10 +353,12 @@ for gene in gene_records:
                 final_mutation.append(str(float(final_mutation[6]) / CDS_len))
                 final_mutation.append(str(1 / gene_length))
                 final_mutation.append(str(1 / CDS_len))
-                final_mutation.append(original_aa)
+                translation = gene[4][2:-2]+"_"
+                final_mutation.append(translation[b])
                 final_mutation.append(hydrophobicity(original_aa))
                 final_mutation.append(mutated_aa)
                 final_mutation.append(hydrophobicity(mutated_aa))
+
 
                 if final_mutation[18] == final_mutation[20]:
                     final_mutation.append("silent")
@@ -367,33 +372,32 @@ for gene in gene_records:
                         final_mutation.append("conservative")
                     else:
                         final_mutation.append("radical")
+                final_mutation.append(get_pos+1)
                 final_mut_list.append(final_mutation)
 
 
 # Reverse CDS
     else:
-        gene_length = gene[3] - gene[2]
         for mutation in point_mutation_list:
             final_mutation = []
             final_mutation += mutation
             mutation_loc = mutation[4]
             if int(mutation_loc) > gene[2] and int(mutation_loc) <= gene[3]:
-                ref = int(mutation_loc) - gene[3]
-
+                ref = int(mutation_loc) - (gene[3]-1)
                 surrounding = complement(
                     str(gene_seq[ref - 2]) + str(gene_seq[ref]))
 
                 # adding polyA tail: needed for some stop codons
                 gene_seq = gene[-1] + "AA"
-                b = (abs(ref) // 3)
+                b = (abs(ref-1) // 3)
                 # Gets the correct codon by using the reference sequence and
                 # translates
                 right_codon = (gene_seq[(b * 3):(b * 3) + 3])
                 codon_list = [right_codon[0], right_codon[1], right_codon[2]]
 
                 # Gets the new(mutated) codon
-
-                codon_list[ref % 3] = complement(mutation[5])
+                get_pos = ((ref % 3)+2)%3   
+                codon_list[get_pos] = complement(mutation[9])
                 new_codon = ''
                 new_codon = new_codon.join(codon_list)
                 original_aa = translate(right_codon.upper())
@@ -406,10 +410,13 @@ for gene in gene_records:
                 final_mutation.append(str(float(final_mutation[6]) / CDS_len))
                 final_mutation.append(str(1 / gene_length))
                 final_mutation.append(str(1 / CDS_len))
-                final_mutation.append(original_aa)
+#                final_mutation.append(original_aa)
+                translation = gene[4][2:-2]+"_"
+                final_mutation.append(translation[b])
                 final_mutation.append(hydrophobicity(original_aa))
                 final_mutation.append(mutated_aa)
                 final_mutation.append(hydrophobicity(mutated_aa))
+
 
                 if final_mutation[18] == final_mutation[20]:
                     final_mutation.append("silent")
@@ -423,6 +430,7 @@ for gene in gene_records:
                         final_mutation.append("conservative")
                     else:
                         final_mutation.append("radical")
+                final_mutation.append(get_pos+1)
                 final_mut_list.append(final_mutation)
 
 #snp nones
@@ -450,35 +458,14 @@ for mutation in point_mutation_list:
         final_mutation.append("NA")
         final_mutation.append("NA")
         final_mutation.append("NA")
+        final_mutation.append("NA")
         final_mut_list.append(final_mutation)
-
-
 
 
 final_indel_mut_list=[]
 
 
-#indel Nones
-
-for mutation in indel_mutation_list:
-    final_mutation = []
-    final_mutation += mutation
-    count = 0
-    for gene in gene_records:
-        if int(mutation[4]) > gene[2] and int(mutation[4]) <= gene[3]:
-            count+=1
-    if count == 0:
-        surrounding = mtDNA_seq[int(
-            mutation[4]) - 2] + mtDNA_seq[int(mutation[4])]
-        final_mutation.append("None")
-        final_mutation.append("None")
-        final_mutation.append("NA")
-        final_mutation.append("NA")
-        final_mutation.append("NA")
-        final_mutation.append("NA")
-        final_mutation.append(len(final_mutation[9])-len(final_mutation[5]))
-        final_indel_mut_list.append(final_mutation)
-
+###indels
 
 for gene in gene_records:
 
@@ -490,8 +477,6 @@ for gene in gene_records:
             final_mutation += mutation
             mutation_loc = mutation[4]
             if int(mutation_loc) > gene[2] and int(mutation_loc) <= gene[3]:
-                ref = int(mutation_loc) - gene[2]
-                gene_seq = gene[-1]
                 final_mutation.append(str(gene[0]))
                 final_mutation.append(str(gene[0]))
                 final_mutation.append(
@@ -518,13 +503,14 @@ for gene in gene_records:
                 # adding polyA tail: needed for some stop codons
                 gene_seq = gene[-1] + "AA"
                 surrounding = str(gene_seq[ref - 2]) + str(gene_seq[ref])
-                b = (ref // 3)
+                b = ((ref-1) // 3)
                 # Gets the correct codon by using the reference sequence and
                 # translates
                 right_codon = (gene_seq[(b * 3):(b * 3) + 3])
                 codon_list = [right_codon[0], right_codon[1], right_codon[2]]
                 # Gets the new(mutated) codon
-                codon_list[ref % 3] = mutation[5]
+                get_pos = ((ref % 3)+2)%3   
+                codon_list[get_pos] = complement(mutation[9])
                 new_codon = ''
                 new_codon = new_codon.join(codon_list)
                 original_aa = translate(right_codon.upper())
@@ -538,6 +524,29 @@ for gene in gene_records:
                 final_mutation.append(str(1 / CDS_len))
                 final_mutation.append(len(final_mutation[9])-len(final_mutation[5]))
                 final_indel_mut_list.append(final_mutation)
+
+
+
+#indel Nones
+
+for mutation in indel_mutation_list:
+    final_mutation = []
+    final_mutation += mutation
+    count = 0
+    for gene in gene_records:
+        if int(mutation[4]) > gene[2] and int(mutation[4]) <= gene[3]:
+            count+=1
+    if count == 0:
+        surrounding = mtDNA_seq[int(
+            mutation[4]) - 2] + mtDNA_seq[int(mutation[4])]
+        final_mutation.append("None")
+        final_mutation.append("None")
+        final_mutation.append("NA")
+        final_mutation.append("NA")
+        final_mutation.append("NA")
+        final_mutation.append("NA")
+        final_mutation.append(len(final_mutation[9])-len(final_mutation[5]))
+        final_indel_mut_list.append(final_mutation)
 
 
 for mutation in final_mut_list:
@@ -568,10 +577,11 @@ mut_header = [
     "amino_mut",
     "amino_mut_group",
     "mut_type",
-    "conserve_non"]
+    "conserve_non",
+    "position"]
 
 # Save file
-save_file = open("PolG_python_dataset_9_15_20.csv", 'w', newline='')
+save_file = open("PolG_python_dataset.csv", 'w', newline='')
 wr = csv.writer(save_file, quoting=csv.QUOTE_ALL)
 wr.writerow(mut_header)
 for line in final_mut_list:
@@ -601,7 +611,7 @@ mut_header = [
     "Change"]
 
 save_file_indels = open(
-    "PolG_python_dataset_indels_9_15_20.csv",
+    "PolG_python_dataset_indels.csv",
     'w',
     newline='')
 wr = csv.writer(save_file_indels, quoting=csv.QUOTE_ALL)
