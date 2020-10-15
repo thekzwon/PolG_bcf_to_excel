@@ -31,7 +31,7 @@ bcftools query -f '%POS\t%REF\t[%AF]\t[%AD]\t%ALT\n' onlypass.vcf  >onlypassquer
 ###
  
  The column names for the point mutation excel are as follows:
-    "old_animal": old name for animal\n
+    "old_animal": old name for animal
     "Animal": new animal name, a-z.
     "tissue": Brain or Liver (can be added to)
     "sample_name": [animal_name]+[Tissue]
